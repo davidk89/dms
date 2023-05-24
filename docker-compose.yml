@@ -1,0 +1,114 @@
+version: '3.1'
+services:
+  postgresql:
+    image: postgres:12-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: dms
+    networks:
+      - dms_network
+    volumes:
+      - ./init/sql:/docker-entrypoint-initdb.d
+      - postgresql_data:/bitnami/postgresql
+
+  keycloak:
+    image: docker.io/bitnami/keycloak:21
+    environment:
+      - KEYCLOAK_CREATE_ADMIN_USER=true
+      - KEYCLOAK_ADMIN_USER=admin
+      - KEYCLOAK_ADMIN_PASSWORD=admin
+      - KEYCLOAK_DATABASE_HOST=postgresql
+      - KEYCLOAK_DATABASE_PORT=5432
+      - KEYCLOAK_DATABASE_NAME=dms
+      - KEYCLOAK_DATABASE_USER=postgres
+      - KEYCLOAK_DATABASE_PASSWORD=postgres
+      - KEYCLOAK_DATABASE_SCHEMA=keycloak
+    networks:
+      - dms_network
+    depends_on:
+      - postgresql
+    ports:
+      - "8081:8080"
+
+  adminer:
+    image: adminer
+    restart: always
+    networks:
+      - dms_network
+    ports:
+      - "8080:8080"
+
+  rabbitmq:
+    container_name: rabbitmq
+    image: rabbitmq:3-management
+    networks:
+      - dms_network
+    ports:
+      - 5672:5672
+      - 15672:15672
+    volumes:
+      - ./data/rabbitmq:/var/lib/rabbitmq
+
+  api:
+    container_name: api_service
+    build:
+      context: .
+      dockerfile: ./apps/api/Dockerfile
+    command: npm run start:dev api
+    env_file:
+      - ./.env.compose
+    networks:
+      - dms_network
+    volumes:
+      - .:/usr/src/app
+      - /usr/src/app/node_modules
+    ports:
+      - '3000:3000'
+
+  user:
+    container_name: user_service
+    build:
+      context: .
+      dockerfile: ./apps/user/Dockerfile
+    command: npm run start user
+    env_file:
+      - ./.env.compose
+    networks:
+      - dms_network
+    depends_on:
+      - postgresql
+      - rabbitmq
+    volumes:
+      - .:/usr/src/app
+      - /usr/src/app/node_modules
+    ports:
+      - '3002:3002'
+
+  department:
+    container_name: departments_service
+    build:
+      context: .
+      dockerfile: ./apps/department/Dockerfile
+    command: npm run start department
+    env_file:
+      - ./.env.compose
+    networks:
+      - dms_network
+    depends_on:
+      - postgresql
+      - rabbitmq
+    volumes:
+      - .:/usr/src/app
+      - /usr/src/app/node_modules
+    ports:
+      - '3001:3001'
+
+networks:
+  dms_network:
+
+volumes:
+  postgresql_data:
+    driver: local
